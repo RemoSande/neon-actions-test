@@ -1,0 +1,22 @@
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+*.pyenv
+# secrets files
+.env 
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test related files
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Build artifacts (less common for pure FastAPI but good to have)
+build/
+dist/
+
