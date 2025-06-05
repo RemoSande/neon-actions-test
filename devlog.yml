@@ -1,0 +1,328 @@
+# .github/workflows/comprehensive_example.yml
+
+# ------------------------------------------------------------------------------
+# 1. WORKFLOW NAME
+# ------------------------------------------------------------------------------
+# (Optional) The name of your workflow. This is displayed in the GitHub Actions UI.
+name: Comprehensive Workflow Example
+
+# ------------------------------------------------------------------------------
+# 2. EVENT TRIGGERS (`on`)
+# ------------------------------------------------------------------------------
+# Defines the events that will trigger this workflow to run.
+on:
+  # A. PUSH: Trigger on pushes to the repository.
+  push:
+    branches: # Only run for pushes to these branches
+      - main
+      - "feature/**" # Wildcard for branches like feature/login, feature/api
+    tags: # Also run for pushes of these tags
+      - "v*.*.*" # Wildcard for version tags like v1.0.0
+    paths: # Only run if files in these paths are modified
+      - "src/**"
+      - ".github/workflows/comprehensive_example.yml"
+    ignore-paths: # Do NOT run if ONLY files in these paths are modified
+      - "docs/**"
+      - "*.md"
+
+  # B. PULL REQUEST: Trigger on pull request events.
+  pull_request:
+    types: # Specific PR actions to trigger on
+      - opened
+      - synchronize # When new commits are pushed to the PR branch
+      - reopened
+      - ready_for_review
+    branches: # Only for PRs targeting these branches
+      - main
+      - "release/**"
+    paths: # Only if PR changes files in these paths
+      - "src/**"
+      - "tests/**"
+
+  # C. WORKFLOW DISPATCH: Allows manual triggering from the GitHub Actions UI.
+  workflow_dispatch:
+    inputs: # (Optional) Define inputs for manual runs
+      environment:
+        description: "Environment to run against"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+      logLevel:
+        description: "Log level"
+        required: false
+        default: "info"
+        type: string
+
+  # D. SCHEDULE: Trigger on a schedule (uses cron syntax).
+  schedule:
+    # Runs at 00:00 UTC every day
+    - cron: "0 0 * * *"
+    # Runs at 12:30 UTC on Mondays and Wednesdays
+    - cron: "30 12 * * 1,3"
+
+# ------------------------------------------------------------------------------
+# 3. ENVIRONMENT VARIABLES (`env`)
+# ------------------------------------------------------------------------------
+# Environment variables available to all jobs and steps in the workflow.
+# These can be overridden at the job or step level.
+env:
+  PROJECT_NAME: MyAwesomeProject
+  PYTHON_VERSION: "3.10" # Example global Python version
+
+# ------------------------------------------------------------------------------
+# 4. DEFAULT SETTINGS (`defaults`)
+# ------------------------------------------------------------------------------
+# Default settings applied to all `run` steps in the workflow.
+defaults:
+  run:
+    shell: bash # Default shell for `run` steps
+    working-directory: ./src # Default working directory for `run` steps
+
+# ------------------------------------------------------------------------------
+# 5. PERMISSIONS (`permissions`)
+# ------------------------------------------------------------------------------
+# (Optional) Defines the default permissions granted to the GITHUB_TOKEN for this workflow.
+# You can set permissions at the workflow level or job level.
+# Set to `read-all` or `write-all` for broad access, or specify granular permissions.
+permissions:
+  contents: read # Read access to repository contents
+  pull-requests: write # Ability to write comments to PRs, add labels, etc.
+  id-token: write # Needed for OIDC authentication with cloud providers
+  actions: read # Permission to read workflow metadata
+
+# ------------------------------------------------------------------------------
+# 6. CONCURRENCY (`concurrency`)
+# ------------------------------------------------------------------------------
+# (Optional) Manages how multiple runs of the workflow are handled.
+concurrency:
+  # Group concurrent runs based on the workflow and the Git ref (e.g., branch or PR).
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # If true, cancel any in-progress runs in the same group when a new run starts.
+  cancel-in-progress: true
+
+# ------------------------------------------------------------------------------
+# 7. JOBS
+# ------------------------------------------------------------------------------
+# A workflow run is made up of one or more jobs, which run in parallel by default.
+# You can define dependencies between jobs to make them run sequentially.
+jobs:
+  # -------------------------
+  # JOB 1: Build
+  # -------------------------
+  build:
+    name: Build Project # Display name for this job in the UI
+    runs-on:
+      ubuntu-latest # Specifies the type of runner (OS) for this job
+      # Common options: ubuntu-latest, windows-latest, macos-latest
+      # Can also be a self-hosted runner label.
+
+    # (Optional) Job-level environment variables
+    env:
+      BUILD_CONFIG: "release"
+
+    # (Optional) Job-level default settings for `run` steps
+    defaults:
+      run:
+        shell: pwsh # Override workflow-level default shell for this job
+
+    # (Optional) Job-level permissions (overrides workflow-level permissions)
+    # permissions:
+    #   packages: write # Example: if this job needs to publish a package
+
+    # (Optional) Outputs from this job that other jobs can use
+    outputs:
+      build_artifact_name: ${{ steps.set_artifact_name.outputs.artifact_name }}
+      build_version: ${{ steps.get_version.outputs.version }}
+
+    steps:
+      # Each job has a sequence of steps. Steps can run commands or use actions.
+
+      - name: Display Manual Trigger Input (if any)
+        if: github.event_name == 'workflow_dispatch' # Conditional execution of this step
+        run: |
+          echo "Manually triggered for environment: ${{ github.event.inputs.environment }}"
+          echo "Log Level: ${{ github.event.inputs.logLevel }}"
+
+      # Step A: Checkout code (very common first step)
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4 # Uses a pre-built action from GitHub Marketplace
+        with:
+          fetch-depth: 0 # Fetch all history for all tags and branches (useful for versioning)
+          submodules: true # Checkout submodules if any
+
+      # Step B: Setup a specific tool (e.g., Node.js, Python, Java)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm" # Cache npm dependencies
+
+      # Step C: Run shell commands
+      - name: Install Dependencies
+        run: npm ci # `ci` is generally preferred over `install` in CI for reproducibility
+        working-directory: ./frontend # Example of changing working directory for a step
+
+      - name: Build Frontend
+        run: npm run build
+        working-directory: ./frontend
+        env: # Step-level environment variables
+          NODE_ENV: production
+
+      # Step D: A step that sets an output for the job
+      - name: Set Artifact Name
+        id: set_artifact_name # ID to reference this step's outputs
+        run: echo "artifact_name=my-app-build-${{ github.sha }}" >> $GITHUB_OUTPUT
+        # $GITHUB_OUTPUT is a special file to set outputs for a step
+
+      - name: Get Project Version (example)
+        id: get_version
+        run: |
+          # Simulate getting a version, e.g., from a file or git tag
+          VERSION="1.2.${{ github.run_number }}"
+          echo "Project version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # Step E: Upload build artifact (files to share with other jobs or for download)
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.set_artifact_name.outputs.artifact_name }} # Use output from previous step
+          path: | # Can specify multiple paths
+            ./frontend/dist/
+            ./src/some_binary
+          retention-days: 7 # How long to keep the artifact
+
+  # -------------------------
+  # JOB 2: Test
+  # -------------------------
+  test:
+    name: Run Tests (Python ${{ matrix.python-version }} on ${{ matrix.os }})
+    needs:
+      build # This job will only run after the 'build' job completes successfully
+      # Use `always()` in `if` condition if you want it to run even if `build` fails.
+
+    # (Optional) Conditional execution for the entire job
+    # if: github.event_name == 'pull_request' # Example: only run tests on PRs
+
+    # STRATEGY: Run job multiple times with different configurations (matrix)
+    strategy:
+      fail-fast:
+        false # If true (default), all other matrix jobs are cancelled if one fails.
+        # Set to false to see all results even if some matrix jobs fail.
+      max-parallel: 3 # Limit how many matrix jobs run concurrently
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.9", "3.10", "3.11"]
+        include: # Add specific extra combinations
+          - os: ubuntu-latest
+            python-version: "3.12"
+        exclude: # Exclude specific combinations
+          - os: windows-latest
+            python-version: "3.9"
+
+    runs-on: ${{ matrix.os }} # Use the OS from the matrix
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifact (if needed for tests)
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.build_artifact_name }} # Access output from the 'build' job
+          path: ./downloaded_artifact
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip" # Cache pip dependencies
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run Pytest
+        run: pytest tests/
+        continue-on-error:
+          true # Example: allow workflow to continue even if some tests fail
+          # Test results should still be checked, perhaps in a later step.
+
+      - name: Upload Test Results (example)
+        if: always() # Run this step even if previous steps (like tests) failed
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: junit/test-results.xml # Assuming tests generate a report here
+          retention-days: 14
+
+  # -------------------------
+  # JOB 3: Deploy
+  # -------------------------
+  deploy_staging:
+    name: Deploy to Staging
+    needs: [build, test] # Depends on both build and test jobs succeeding
+    if:
+      github.ref == 'refs/heads/main' && github.event_name == 'push' # Only deploy on push to main
+      # and if build/test succeeded.
+
+    # ENVIRONMENT: Defines a deployment environment.
+    # Environments can have protection rules and secrets.
+    environment:
+      name: staging
+      url: https://staging.example.com # URL will be shown in GitHub UI for this deployment
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.build_artifact_name }}
+          path: ./deploy_package
+
+      - name: Configure AWS Credentials (example for OIDC)
+        if: false # Placeholder, enable and configure if using AWS OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/GitHubActionRole-Staging
+          aws-region: us-east-1
+
+      - name: Deploy to Staging Server
+        run: |
+          echo "Deploying version ${{ needs.build.outputs.build_version }} from ./deploy_package to Staging..."
+          # Add your actual deployment script/commands here
+          # e.g., scp, rsync, docker push, serverless deploy, etc.
+          sleep 10 # Simulate deployment
+          echo "Deployment to Staging complete."
+
+  # -------------------------
+  # JOB 4: Notify on Failure
+  # -------------------------
+  notify_on_failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [build, test, deploy_staging] # Depends on all previous critical jobs
+    if:
+      failure() # This job only runs if any of the jobs in `needs` failed.
+      # `always()` would run regardless of success/failure.
+      # `success()` would run only if all `needs` jobs succeeded.
+
+    steps:
+      - name: Send Slack Notification
+        run: |
+          echo "A job in the workflow failed!"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "See details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # In a real scenario, you'd use a Slack action or curl to send a message.
+          # Example: uses: slackapi/slack-github-action@v1.24.0
