@@ -99,5 +99,5 @@ async def fetch_and_store_pokemon(
             status_code=404,
             detail=f"Pokemon with ID {pokemon_id} not found in PokeAPI, or an error occurred during fetching."
         )
-        
+    
     return pokemon
